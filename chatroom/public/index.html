@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-User Chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Welcome Section -->
+    <div class="welcome-section" id="welcomeSection">
+      <div class="welcome-card">
+        <h1>💬 Multi-User Chat Room</h1>
+        <p>Enter your username to join the chat</p>
+        <div class="input-group">
+          <input 
+            type="text" 
+            id="usernameInput" 
+            placeholder="Enter your username" 
+            maxlength="20"
+            autocomplete="off"
+          />
+          <button onclick="joinChat()" class="join-btn">Join Chat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Section -->
+    <div class="chat-section" id="chatSection" style="display: none;">
+      <div class="chat-header">
+        <h2>💬 Chat Room</h2>
+        <div class="header-info">
+          <span>Users Online: <span id="userCount">0</span></span>
+          <button onclick="leaveChat()" class="leave-btn">Leave</button>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <h3>Users Online</h3>
+        <ul id="usersList"></ul>
+      </div>
+
+      <div class="chat-container">
+        <div id="messagesContainer" class="messages-container"></div>
+        
+        <div class="typing-indicator" id="typingIndicator"></div>
+        
+        <div class="input-area">
+          <input 
+            type="text" 
+            id="messageInput" 
+            placeholder="Type your message... (use /ai for AI help)" 
+            onkeypress="handleKeyPress(event)"
+            oninput="handleTyping()"
+          />
+          <input 
+            type="file" 
+            id="fileInput" 
+            style="display: none;"
+            onchange="handleFileUpload(event)"
+          />
+          <button onclick="document.getElementById('fileInput').click()" class="file-btn" title="Upload file">📎</button>
+          <button onclick="sendMessage()" class="send-btn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "multi-user-chat",
+  "version": "1.0.0",
+  "description": "A multi-user chat application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "chat",
+    "multi-user",
+    "real-time"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.3.0",
+    "express": "^4.18.2",
+    "socket.io": "^4.5.4"
+  }
+}

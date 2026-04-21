@@ -1,0 +1,11 @@
+{
+  "name": "terminal-chat",
+  "version": "1.0.0",
+  "description": "A terminal chatbot using Gemini API with history persistence",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "readline": "^1.3.0"
+  }
+}
