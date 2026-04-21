@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Compression Utility</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎵 Audio Compression Utility</h1>
+      <p>Upload, compress, and download audio files with MP3 format</p>
+    </header>
+
+    <main>
+      <!-- Upload Section -->
+      <section class="card">
+        <h2>Upload & Compress Audio</h2>
+        <div class="upload-area" id="uploadArea">
+          <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p>Drag and drop your audio file here or</p>
+          <input type="file" id="audioInput" accept="audio/*" hidden>
+          <button class="btn-upload" onclick="document.getElementById('audioInput').click()">
+            Browse Files
+          </button>
+        </div>
+
+        <div class="options">
+          <label for="bitrate">Compression Bitrate (kbps):</label>
+          <select id="bitrate">
+            <option value="64">64 kbps (Low Quality, Smallest Size)</option>
+            <option value="96">96 kbps (Standard)</option>
+            <option value="128" selected>128 kbps (Good Quality)</option>
+            <option value="192">192 kbps (High Quality)</option>
+            <option value="256">256 kbps (Very High Quality)</option>
+            <option value="320">320 kbps (Best Quality)</option>
+          </select>
+        </div>
+
+        <button class="btn-primary" id="compressBtn" disabled>
+          Compress Audio
+        </button>
+      </section>
+
+      <!-- Results Section -->
+      <section class="card" id="resultsSection" style="display: none;">
+        <h2>Compression Results</h2>
+        <div class="results">
+          <div class="stat">
+            <span class="label">Original Size:</span>
+            <span class="value" id="originalSize">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Compressed Size:</span>
+            <span class="value" id="compressedSize">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Compression Ratio:</span>
+            <span class="value" id="compressionRatio">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Space Saved:</span>
+            <span class="value" id="spaceSaved">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Bitrate:</span>
+            <span class="value" id="usedBitrate">-</span>
+          </div>
+        </div>
+
+        <div class="audio-info" id="audioInfo" style="display: none;">
+          <h3>Audio Information</h3>
+          <p><strong>Duration:</strong> <span id="duration">-</span></p>
+          <p><strong>Sample Rate:</strong> <span id="sampleRate">-</span> Hz</p>
+          <p><strong>Channels:</strong> <span id="channels">-</span></p>
+          <p><strong>Original Bitrate:</strong> <span id="originalBitrate">-</span></p>
+        </div>
+
+        <button class="btn-download" id="downloadBtn">
+          📥 Download Compressed Audio
+        </button>
+      </section>
+
+      <!-- File History Section -->
+      <section class="card">
+        <h2>Compressed Files History</h2>
+        <button class="btn-refresh" onclick="refreshFileList()">Refresh List</button>
+        <div class="file-list" id="fileList">
+          <p class="loading">Loading files...</p>
+        </div>
+      </section>
+
+      <!-- Loading Spinner -->
+      <div class="spinner" id="spinner" style="display: none;"></div>
+    </main>
+
+    <!-- Status Messages -->
+    <div class="status-message" id="statusMessage" style="display: none;"></div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
