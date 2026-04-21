@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SVD Image Compressor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & tokens ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #ffffff;
+  --bg2:       #0c1220;
+  --surface:   #101828;
+  --card:      #131f30;
+  --border:    #1e2f47;
+  --border2:   #243549;
+  --amber:     #f5a623;
+  --amber-dim: #a06b12;
+  --teal:      #00d4a0;
+  --teal-dim:  #00875f;
+  --blue:      #4fa8e8;
+  --red:       #f06060;
+  --text:      #dde8f5;
+  --muted:     #5a7290;
+  --font-head: 'Syne', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-body: 'DM Sans', sans-serif;
+  --radius:    10px;
+  --glow-a:    0 0 18px rgba(245,166,35,.35);
+  --glow-t:    0 0 18px rgba(0,212,160,.30);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Scanline overlay ────────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,.07) 2px,
+    rgba(0,0,0,.07) 4px
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 18px 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky; top: 0;
+  background: rgba(7,11,18,.92);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+}
+
+.logo-mark {
+  width: 36px; height: 36px;
+  border: 2px solid var(--amber);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--glow-a);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--amber);
+  letter-spacing: -1px;
+}
+
+header h1 {
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -.3px;
+}
+
+header h1 span { color: var(--amber); }
+
+.header-tag {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: .65rem;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 36px 24px 60px;
+  display: grid;
+  gap: 28px;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+}
+
+.card-header h2 {
+  font-family: var(--font-head);
+  font-size: .8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+}
+
+.card-header .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: var(--glow-a);
+}
+
+.card-body { padding: 24px; }
+
+/* ── Upload zone ─────────────────────────────────────────────────────────── */
+#drop-zone {
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 52px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  position: relative;
+}
+
+#drop-zone:hover, #drop-zone.drag-over {
+  border-color: var(--amber);
+  background: rgba(245,166,35,.04);
+}
+
+#drop-zone input[type=file] {
+  position: absolute; inset: 0;
+  opacity: 0; cursor: pointer;
+}
+
+.upload-icon {
+  font-size: 2.2rem;
+  margin-bottom: 14px;
+  display: block;
+  opacity: .6;
+}
+
+#drop-zone p {
+  font-size: .9rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+#drop-zone p strong {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+#filename-display {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: .72rem;
+  color: var(--teal);
+  min-height: 18px;
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────── */
+.controls-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  align-items: end;
+}
+
+.slider-group { display: flex; flex-direction: column; gap: 10px; }
+
+.slider-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slider-label {
+  font-family: var(--font-head);
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+
+#ratio-display {
+  font-family: var(--font-mono);
+  font-size: .9rem;
+  color: var(--amber);
+  font-weight: 600;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: var(--glow-a);
+  cursor: pointer;
+  transition: transform .15s;
+}
+
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+.slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: .6rem;
+  color: var(--muted);
+  padding: 0 2px;
+}
+
+.btn-compress {
+  background: var(--amber);
+  color: #0a0800;
+  border: none;
+  padding: 13px 32px;
+  border-radius: var(--radius);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: .88rem;
+  letter-spacing: .5px;
+  cursor: pointer;
+  transition: opacity .15s, transform .15s, box-shadow .15s;
+  box-shadow: var(--glow-a);
+  white-space: nowrap;
+}
+
+.btn-compress:hover:not(:disabled) {
+  opacity: .9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 24px rgba(245,166,35,.45);
+}
+
+.btn-compress:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ── Loading bar ─────────────────────────────────────────────────────────── */
+#progress-wrap {
+  display: none;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#progress-wrap.visible { display: block; }
+
+#progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber), var(--teal));
+  width: 0%;
+  animation: loadPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes loadPulse {
+  0%   { width: 0%; }
+  50%  { width: 80%; }
+  100% { width: 95%; }
+}
+
+/* ── Status message ──────────────────────────────────────────────────────── */
+#status-msg {
+  font-family: var(--font-mono);
+  font-size: .72rem;
+  min-height: 20px;
+  color: var(--muted);
+}
+
+#status-msg.error { color: var(--red); }
+#status-msg.ok    { color: var(--teal); }
+
+/* ── Results section ─────────────────────────────────────────────────────── */
+#results { display: none; }
+#results.visible { display: grid; gap: 24px; }
+
+/* ── Image comparison ────────────────────────────────────────────────────── */
+.image-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.img-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.img-pane-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.pill {
+  font-family: var(--font-mono);
+  font-size: .62rem;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.pill-amber { background: rgba(245,166,35,.15); color: var(--amber); border: 1px solid var(--amber-dim); }
+.pill-teal  { background: rgba(0,212,160,.12);  color: var(--teal);  border: 1px solid var(--teal-dim); }
+
+.img-wrapper {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.img-wrapper img {
+  max-width: 100%;
+  max-height: 340px;
+  display: block;
+  object-fit: contain;
+}
+
+.img-size-tag {
+  font-family: var(--font-mono);
+  font-size: .65rem;
+  color: var(--muted);
+}
+
+/* ── Metrics grid ────────────────────────────────────────────────────────── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.metric-card.amber::before { background: var(--amber); }
+.metric-card.teal::before  { background: var(--teal); }
+.metric-card.blue::before  { background: var(--blue); }
+.metric-card.red::before   { background: var(--red); }
+
+.metric-name {
+  font-family: var(--font-mono);
+  font-size: .6rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.metric-card.amber .metric-value { color: var(--amber); }
+.metric-card.teal  .metric-value { color: var(--teal); }
+.metric-card.blue  .metric-value { color: var(--blue); }
+.metric-card.red   .metric-value { color: var(--red); }
+
+.metric-desc {
+  font-size: .68rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── Singular value spectrum chart ──────────────────────────────────────── */
+#sv-canvas {
+  width: 100%;
+  height: 180px;
+  display: block;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: .64rem;
+  color: var(--muted);
+}
+
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 5px;
+}
+
+/* ── Info note ───────────────────────────────────────────────────────────── */
+.math-note {
+  background: rgba(79,168,232,.06);
+  border: 1px solid rgba(79,168,232,.2);
+  border-radius: 8px;
+  padding: 14px 18px;
+  font-family: var(--font-mono);
+  font-size: .7rem;
+  color: #7ab8e0;
+  line-height: 1.8;
+}
+
+.math-note strong { color: var(--blue); }
+
+/* ── Resize notice ───────────────────────────────────────────────────────── */
+#resize-notice {
+  display: none;
+  background: rgba(245,166,35,.07);
+  border: 1px solid var(--amber-dim);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: .75rem;
+  color: var(--amber);
+  font-family: var(--font-mono);
+}
+
+#resize-notice.visible { display: block; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .image-compare { grid-template-columns: 1fr; }
+  .controls-grid { grid-template-columns: 1fr; }
+  header { padding: 14px 16px; }
+  main   { padding: 20px 12px 40px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo-mark">Σ</div>
+  <h1>SVD <span>Compressor</span></h1>
+  <span class="header-tag">A = U · Σ · Vᵀ</span>
+</header>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- Math explanation
+  <div class="math-note">
+    <strong>How it works:</strong>
+    Each colour channel is treated as a matrix A (height × width).
+    SVD factorises it as <strong>A = U · Σ · Vᵀ</strong>.
+    Keeping only the top-<em>k</em> singular values gives the best rank-<em>k</em> approximation
+    (Eckart–Young theorem). Storage drops from <em>m·n</em> values to <em>k·(m+n+1)</em> values per channel.
+    Quality is measured with <strong>PSNR</strong> (decibels, higher = better)
+    and <strong>SSIM</strong> (structural similarity, 1 = perfect).
+  </div> -->
+
+  <!-- Upload card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="dot"></div>
+      <h2>Upload Image</h2>
+    </div>
+    <div class="card-body" style="display:grid;gap:20px;">
+
+      <div id="drop-zone">
+        <input type="file" id="file-input" accept="image/*" />
+        <span class="upload-icon">⬆</span>
+        <p><strong>Drag & drop</strong> or click to choose<br>
+        JPEG · PNG · WebP · BMP</p>
+        <div id="filename-display"></div>
+      </div>
+
+      <div id="resize-notice">
+        ⚠ Images wider/taller than 320 px are auto-resized to keep SVD fast (O(min(m,n)³)).
+      </div>
+
+      <!-- Slider + button -->
+      <div class="controls-grid">
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Rank fraction  k / min(m,n)</span>
+            <span id="ratio-display">10 %</span>
+          </div>
+          <input type="range" id="ratio-slider" min="1" max="100" value="10" step="1" />
+          <div class="slider-ticks">
+            <span>1% — max compression</span>
+            <span>50%</span>
+            <span>100% — lossless</span>
+          </div>
+        </div>
+
+        <button class="btn-compress" id="compress-btn" disabled>Compress</button>
+      </div>
+
+      <div id="progress-wrap"><div id="progress-bar"></div></div>
+      <div id="status-msg">← Upload an image to begin.</div>
+      <div id="compression-notice" style="display:none; background: rgba(0,212,160,.07); border: 1px solid rgba(0,212,160,.2); border-radius: 8px; padding: 10px 16px; font-size: .75rem; color: var(--teal); font-family: var(--font-mono);"></div>
+
+    </div>
+  </div>
+
+  <!-- ── Results ────────────────────────────────────────────────────────────── -->
+  <div id="results">
+
+    <!-- Image comparison -->
+    <div class="card">
+      <div class="card-header">
+        <div class="dot" style="background:var(--teal);box-shadow:var(--glow-t);"></div>
+        <h2>Visual Comparison</h2>
+      </div>
+      <div class="card-body">
+        <div class="image-compare">
+          <div class="img-pane">
+            <div class="img-pane-label">
+              <span>Original</span>
+              <span class="pill pill-amber" id="orig-tag">—</span>
+            </div>
+            <div class="img-wrapper"><img id="img-original" alt="Original" /></div>
+            <div class="img-size-tag" id="orig-size-tag"></div>
+          </div>
+          <div class="img-pane">
+            <div class="img-pane-label">
+              <span>Reconstructed</span>
+              <span class="pill pill-teal" id="recon-tag">—</span>
+            </div>
+            <div class="img-wrapper"><img id="img-recon" alt="Reconstructed" /></div>
+            <div class="img-size-tag" id="recon-size-tag"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="card">
+      <div class="card-header">
+        <div class="dot" style="background:var(--blue);box-shadow:0 0 12px rgba(79,168,232,.4);"></div>
+        <h2>Quality Metrics</h2>
+      </div>
+      <div class="card-body">
+        <div class="metrics-grid">
+          <div class="metric-card amber">
+            <div class="metric-name">PSNR</div>
+            <div class="metric-value" id="m-psnr">—</div>
+            <div class="metric-desc" id="m-psnr-desc">Peak Signal-to-Noise Ratio</div>
+          </div>
+          <div class="metric-card teal">
+            <div class="metric-name">SSIM</div>
+            <div class="metric-value" id="m-ssim">—</div>
+            <div class="metric-desc" id="m-ssim-desc">Structural Similarity Index</div>
+          </div>
+          <div class="metric-card blue">
+            <div class="metric-name">Energy captured</div>
+            <div class="metric-value" id="m-energy">—</div>
+            <div class="metric-desc">Fraction of Σ σᵢ² retained</div>
+          </div>
+          <div class="metric-card red">
+            <div class="metric-name">SVD repr. size</div>
+            <div class="metric-value" id="m-svd">—</div>
+            <div class="metric-desc" id="m-svd-desc">vs raw pixel bytes</div>
+          </div>
+          <div class="metric-card amber" style="--amber:#a0c4ff;">
+            <div class="metric-name">Rank used</div>
+            <div class="metric-value" id="m-rank" style="color:#a0c4ff;">—</div>
+            <div class="metric-desc" id="m-rank-desc">k singular values kept</div>
+          </div>
+          <div class="metric-card teal">
+            <div class="metric-name">MSE</div>
+            <div class="metric-value" id="m-mse">—</div>
+            <div class="metric-desc">Mean Squared Error (per channel)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Singular value spectrum -->
+    <div class="card">
+      <div class="card-header">
+        <div class="dot" style="background:var(--amber);box-shadow:var(--glow-a);"></div>
+        <h2>Singular Value Spectrum  (green channel)</h2>
+      </div>
+      <div class="card-body">
+        <canvas id="sv-canvas"></canvas>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:var(--amber);"></span>Kept (rank-k)</span>
+          <span><span class="legend-dot" style="background:var(--border2);"></span>Discarded</span>
+          <span id="sv-cutoff-label" style="margin-left:auto;"></span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /results -->
+</main>
+
+<script>
+/* ─── State ─────────────────────────────────────────────────────────────── */
+let selectedFile = null;
+
+/* ─── DOM refs ──────────────────────────────────────────────────────────── */
+const dropZone     = document.getElementById('drop-zone');
+const fileInput    = document.getElementById('file-input');
+const filenameDisp = document.getElementById('filename-display');
+const ratioSlider  = document.getElementById('ratio-slider');
+const ratioDisplay = document.getElementById('ratio-display');
+const compressBtn  = document.getElementById('compress-btn');
+const progressWrap = document.getElementById('progress-wrap');
+const progressBar  = document.getElementById('progress-bar');
+const statusMsg    = document.getElementById('status-msg');
+const results      = document.getElementById('results');
+const resizeNotice = document.getElementById('resize-notice');
+
+/* ─── Slider ────────────────────────────────────────────────────────────── */
+ratioSlider.addEventListener('input', () => {
+  ratioDisplay.textContent = `${ratioSlider.value} %`;
+});
+
+/* ─── File handling ─────────────────────────────────────────────────────── */
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    setStatus('Please select an image file.', 'error');
+    return;
+  }
+  selectedFile = file;
+  filenameDisp.textContent = `✓  ${file.name}  (${formatBytes(file.size)})`;
+  compressBtn.disabled = false;
+  setStatus('Ready — adjust rank fraction and click Compress.', '');
+}
+
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+/* ─── Compress ──────────────────────────────────────────────────────────── */
+compressBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+
+  compressBtn.disabled = true;
+  progressWrap.classList.add('visible');
+  progressBar.style.animation = 'loadPulse 1.6s ease-in-out infinite';
+  setStatus('Running SVD decomposition…  (may take a few seconds)', '');
+  results.classList.remove('visible');
+
+  const formData = new FormData();
+  formData.append('image', selectedFile);
+  formData.append('keepRatio', (parseInt(ratioSlider.value) / 100).toFixed(2));
+
+  try {
+    const t0  = performance.now();
+    const res = await fetch('/compress', { method: 'POST', body: formData });
+    const ms  = Math.round(performance.now() - t0);
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Server error');
+    }
+
+    const data = await res.json();
+    renderResults(data, ms);
+    setStatus(`Done in ${ms} ms`, 'ok');
+
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'error');
+  } finally {
+    progressBar.style.animation = 'none';
+    progressBar.style.width = '100%';
+    setTimeout(() => {
+      progressWrap.classList.remove('visible');
+      progressBar.style.width = '0%';
+    }, 600);
+    compressBtn.disabled = false;
+  }
+});
+
+/* ─── Render results ────────────────────────────────────────────────────── */
+function renderResults(data, ms) {
+  const { originalImage, reconstructedImage, metrics, sizes, info, singularValues } = data;
+
+  // Display compression notice
+  const compressionNotice = document.getElementById('compression-notice');
+  if (info.message) {
+    compressionNotice.textContent = info.message;
+    compressionNotice.style.display = 'block';
+  }
+
+  // Images
+  document.getElementById('img-original').src = `data:image/png;base64,${originalImage}`;
+  document.getElementById('img-recon').src     = `data:image/png;base64,${reconstructedImage}`;
+
+  // Tags
+  document.getElementById('orig-tag').textContent  = `${info.width}×${info.height}`;
+  document.getElementById('recon-tag').textContent = `rank ${info.kActual}`;
+
+  // Size labels
+  document.getElementById('orig-size-tag').textContent  = `File: ${formatBytes(sizes.originalFile)}  ·  Raw pixels: ${formatBytes(sizes.originalRaw)}`;
+  document.getElementById('recon-size-tag').textContent = `SVD repr: ${formatBytes(sizes.svdRepr)}  ·  Output PNG: ${formatBytes(sizes.reconPng)}`;
+
+  // Metrics
+  const psnrVal = metrics.psnr === null ? '∞' : metrics.psnr.toFixed(1);
+  document.getElementById('m-psnr').textContent = psnrVal + ' dB';
+  document.getElementById('m-psnr-desc').textContent = psnrQuality(metrics.psnr);
+
+  document.getElementById('m-ssim').textContent = metrics.ssim.toFixed(3);
+  document.getElementById('m-ssim-desc').textContent = ssimQuality(metrics.ssim);
+
+  document.getElementById('m-energy').textContent = info.energyPct.toFixed(1) + ' %';
+
+  const ratio = sizes.svdRepr / sizes.originalRaw;
+  document.getElementById('m-svd').textContent = (ratio * 100).toFixed(1) + ' %';
+  document.getElementById('m-svd-desc').textContent =
+    `${formatBytes(sizes.svdRepr)} vs ${formatBytes(sizes.originalRaw)} raw`;
+
+  document.getElementById('m-rank').textContent = `${info.kActual} / ${info.maxRank}`;
+  document.getElementById('m-rank-desc').textContent =
+    `${((info.kActual / info.maxRank) * 100).toFixed(1)}% of max rank`;
+
+  document.getElementById('m-mse').textContent = metrics.mse.toFixed(1);
+
+  // Resize notice
+  if (info.wasResized) resizeNotice.classList.add('visible');
+  else resizeNotice.classList.remove('visible');
+
+  // Singular value chart
+  drawSVChart(singularValues, info.kActual);
+
+  results.classList.add('visible');
+  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ─── Singular value spectrum chart ─────────────────────────────────────── */
+function drawSVChart(svs, kActual) {
+  const canvas  = document.getElementById('sv-canvas');
+  const dpr     = window.devicePixelRatio || 1;
+  const W       = canvas.parentElement.clientWidth - 48;
+  const H       = 180;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = { top: 14, right: 14, bottom: 28, left: 52 };
+  const cw  = W - pad.left - pad.right;
+  const ch  = H - pad.top  - pad.bottom;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const maxVal = svs[0] || 1;
+  const n      = svs.length;
+  const bw     = Math.max(1, cw / n - 1);
+
+  // Grid lines
+  ctx.strokeStyle = '#1e2f47';
+  ctx.lineWidth   = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + ch - (ch * i / 4);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + cw, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#3a5268';
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxVal * i / 4), pad.left - 6, y + 3);
+  }
+
+  // Bars
+  for (let i = 0; i < n; i++) {
+    const x    = pad.left + (i / n) * cw;
+    const barH = (svs[i] / maxVal) * ch;
+    const y    = pad.top + ch - barH;
+
+    ctx.fillStyle = i < kActual
+      ? 'rgba(245,166,35,0.85)'
+      : 'rgba(30,47,71,0.9)';
+
+    ctx.fillRect(x, y, Math.max(1, bw), barH);
+  }
+
+  // Cutoff line
+  if (kActual < n) {
+    const cx = pad.left + (kActual / n) * cw;
+    ctx.strokeStyle = '#00d4a0';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(cx, pad.top);
+    ctx.lineTo(cx, pad.top + ch);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // X-axis labels
+  ctx.fillStyle   = '#3a5268';
+  ctx.font        = '9px JetBrains Mono, monospace';
+  ctx.textAlign   = 'center';
+  const labelSteps = Math.min(6, n);
+  for (let i = 0; i <= labelSteps; i++) {
+    const idx = Math.round(i * (n - 1) / labelSteps);
+    const x   = pad.left + (idx / n) * cw;
+    ctx.fillText(idx + 1, x, pad.top + ch + 16);
+  }
+
+  // Axis label
+  ctx.fillStyle = '#3a5268';
+  ctx.font      = '9px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Singular value index  →', pad.left + cw / 2, H - 2);
+
+  document.getElementById('sv-cutoff-label').textContent =
+    `Cutoff at k=${kActual}  (teal line)`;
+}
+
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+function formatBytes(b) {
+  if (b < 1024)        return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+function psnrQuality(v) {
+  if (v === null || v > 100) return 'Visually lossless (>40 dB ideal)';
+  if (v >= 40) return 'Excellent — visually lossless';
+  if (v >= 35) return 'Very good — minor artefacts';
+  if (v >= 30) return 'Good quality';
+  if (v >= 25) return 'Moderate degradation';
+  return 'Significant degradation';
+}
+
+function ssimQuality(v) {
+  if (v >= 0.98) return 'Excellent structural similarity';
+  if (v >= 0.92) return 'Very good — barely perceptible';
+  if (v >= 0.80) return 'Good quality';
+  if (v >= 0.65) return 'Noticeable structural loss';
+  return 'Heavy structural degradation';
+}
+
+function setStatus(msg, type) {
+  statusMsg.textContent  = msg;
+  statusMsg.className    = type;
+}
+</script>
+</body>
+</html>

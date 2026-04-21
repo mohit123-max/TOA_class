@@ -1,6 +1,8 @@
-// Global variables
+// Audio Compression Client - Browser-based MP3 compression using lamejs
+// No FFmpeg needed!
+
 let selectedFile = null;
-let compressedFilename = null;
+let compressedAudioBlob = null;
 
 // DOM elements
 const uploadArea = document.getElementById('uploadArea');
@@ -77,7 +79,7 @@ function updateUploadArea() {
   }
 }
 
-// Compress audio
+// Compress audio in browser
 async function compressAudio() {
   if (!selectedFile) {
     showStatus('Please select an audio file first', 'error');
@@ -88,25 +90,29 @@ async function compressAudio() {
     showSpinner(true);
     compressBtn.disabled = true;
 
-    const formData = new FormData();
-    formData.append('audio', selectedFile);
-    formData.append('bitrate', bitrateSelect.value);
+    // Get bitrate from select
+    const bitrateValue = parseInt(bitrateSelect.value);
 
-    const response = await fetch('/api/compress', {
-      method: 'POST',
-      body: formData
-    });
+    // Decode audio file
+    showStatus('📊 Decoding audio...', 'info');
+    const audioBuffer = await decodeAudioFile(selectedFile);
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Compression failed');
-    }
+    // Encode to MP3
+    showStatus('🎵 Encoding to MP3...', 'info');
+    compressedAudioBlob = await encodeToMP3(audioBuffer, bitrateValue);
 
-    const result = await response.json();
-    compressedFilename = result.compressedFile;
+    // Calculate stats
+    const originalSize = selectedFile.size;
+    const compressedSize = compressedAudioBlob.size;
+    const stats = calculateCompressionStats(originalSize, compressedSize, bitrateValue);
 
     // Display results
-    displayResults(result);
+    displayResults(stats, audioBuffer);
+
+    // Save to server
+    showStatus('💾 Saving to server...', 'info');
+    await saveCompressedToServer(compressedAudioBlob);
+
     showStatus('✅ Audio compressed successfully!', 'success');
     
     // Refresh file list
@@ -120,29 +126,137 @@ async function compressAudio() {
   }
 }
 
+// Decode audio file to AudioBuffer
+async function decodeAudioFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(e.target.result);
+        resolve(audioBuffer);
+      } catch (err) {
+        reject(new Error(`Failed to decode audio: ${err.message}`));
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error('Failed to read audio file'));
+    };
+
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Encode AudioBuffer to MP3 using lamejs
+async function encodeToMP3(audioBuffer, bitrate) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Check if lamejs is loaded
+      if (typeof lamejs === 'undefined') {
+        reject(new Error('lamejs library not loaded. Please refresh the page.'));
+        return;
+      }
+
+      const samples = audioBuffer.getChannelData(0);
+      const encoder = new lamejs.Mp3Encoder(
+        audioBuffer.numberOfChannels,
+        audioBuffer.sampleRate,
+        bitrate
+      );
+
+      const mp3Data = [];
+      const SAMPLES_PER_FRAME = 1152;
+      const sampleLength = samples.length;
+
+      for (let i = 0; i < sampleLength; i += SAMPLES_PER_FRAME) {
+        const sampleChunk = samples.slice(i, i + SAMPLES_PER_FRAME);
+        const pcm = new Float32Array(sampleChunk);
+        
+        // Convert float samples to int16
+        const int16 = floatTo16BitPCM(pcm);
+        const mp3buf = encoder.encodeBuffer(int16);
+        
+        if (mp3buf.length > 0) {
+          mp3Data.push(new Uint8Array(mp3buf));
+        }
+      }
+
+      // Finish encoding
+      const finalBuf = encoder.flush();
+      if (finalBuf.length > 0) {
+        mp3Data.push(new Uint8Array(finalBuf));
+      }
+
+      // Combine all chunks
+      const totalLength = mp3Data.reduce((acc, arr) => acc + arr.length, 0);
+      const mp3Buffer = new Uint8Array(totalLength);
+      let offset = 0;
+
+      for (let chunk of mp3Data) {
+        mp3Buffer.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      const blob = new Blob([mp3Buffer], { type: 'audio/mpeg' });
+      resolve(blob);
+    } catch (error) {
+      reject(new Error(`MP3 encoding failed: ${error.message}`));
+    }
+  });
+}
+
+// Convert float32 to int16 PCM
+function floatTo16BitPCM(float32Array) {
+  const int16 = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    int16[i] = float32Array[i] < 0 ? float32Array[i] * 0x8000 : float32Array[i] * 0x7FFF;
+  }
+  return int16;
+}
+
+// Save compressed audio to server
+async function saveCompressedToServer(blob) {
+  try {
+    const response = await fetch('/api/save-compressed', {
+      method: 'POST',
+      body: blob,
+      headers: {
+        'Content-Type': 'audio/mpeg'
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save compressed audio');
+    }
+
+    const result = await response.json();
+    downloadBtn.onclick = () => downloadFile(result.filename);
+    return result;
+  } catch (error) {
+    console.warn('Could not save to server:', error.message);
+    // Still allow download even if server save fails
+  }
+}
+
 // Display compression results
-function displayResults(result) {
-  const { stats, originalInfo } = result;
-  
+function displayResults(stats, audioBuffer) {
   document.getElementById('originalSize').textContent = formatBytes(stats.originalSize);
   document.getElementById('compressedSize').textContent = formatBytes(stats.compressedSize);
   document.getElementById('compressionRatio').textContent = stats.compressionRatio;
   document.getElementById('spaceSaved').textContent = stats.spaceSavedMB + ' MB';
-  document.getElementById('usedBitrate').textContent = bitrateSelect.value + ' kbps';
+  document.getElementById('usedBitrate').textContent = stats.bitrate + ' kbps';
 
   // Display audio info
-  if (originalInfo) {
-    const infoDiv = document.getElementById('audioInfo');
-    document.getElementById('duration').textContent = 
-      originalInfo.duration ? formatDuration(originalInfo.duration) : '-';
-    document.getElementById('sampleRate').textContent = 
-      originalInfo.sampleRate ? (originalInfo.sampleRate / 1000) + ' kHz' : '-';
-    document.getElementById('channels').textContent = 
-      originalInfo.channels || '-';
-    document.getElementById('originalBitrate').textContent = 
-      originalInfo.bitrate ? formatBytes(originalInfo.bitrate / 8) + '/s' : '-';
-    infoDiv.style.display = 'block';
-  }
+  const infoDiv = document.getElementById('audioInfo');
+  const duration = audioBuffer.duration;
+  document.getElementById('duration').textContent = formatDuration(duration);
+  document.getElementById('sampleRate').textContent = (audioBuffer.sampleRate / 1000).toFixed(1) + ' kHz';
+  document.getElementById('channels').textContent = audioBuffer.numberOfChannels;
+  document.getElementById('originalBitrate').textContent = 'N/A (decoded)';
+  infoDiv.style.display = 'block';
 
   resultsSection.style.display = 'block';
   resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -150,20 +264,30 @@ function displayResults(result) {
 
 // Download audio
 function downloadAudio() {
-  if (!compressedFilename) {
-    showStatus('No compressed file available', 'error');
+  if (!compressedAudioBlob) {
+    showStatus('No compressed audio available', 'error');
     return;
   }
 
-  const downloadUrl = `/api/download/${compressedFilename}`;
   const link = document.createElement('a');
-  link.href = downloadUrl;
+  link.href = URL.createObjectURL(compressedAudioBlob);
   link.download = `compressed-${Date.now()}.mp3`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
   
   showStatus('📥 Download started!', 'success');
+}
+
+// Download file from server
+function downloadFile(filename) {
+  const link = document.createElement('a');
+  link.href = `/api/download/${filename}`;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 // Refresh file list
@@ -186,7 +310,7 @@ async function refreshFileList() {
               </p>
             </div>
             <div class="file-actions">
-              <button class="btn-small" onclick="downloadFileByName('${file.filename}')">
+              <button class="btn-small" onclick="downloadFile('${file.filename}')">
                 Download
               </button>
               <button class="btn-small btn-delete" onclick="deleteFile('${file.filename}')">
@@ -204,20 +328,23 @@ async function refreshFileList() {
   }
 }
 
-// Download file by name
-function downloadFileByName(filename) {
-  const link = document.createElement('a');
-  link.href = `/api/download/${filename}`;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-// Delete file (placeholder - implement on backend if needed)
-function deleteFile(filename) {
+// Delete file
+async function deleteFile(filename) {
   if (confirm('Are you sure you want to delete this file?')) {
-    showStatus('Delete functionality not yet implemented', 'info');
+    try {
+      const response = await fetch(`/api/files/${filename}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        showStatus('✅ File deleted', 'success');
+        refreshFileList();
+      } else {
+        showStatus('❌ Failed to delete file', 'error');
+      }
+    } catch (error) {
+      showStatus(`❌ Error: ${error.message}`, 'error');
+    }
   }
 }
 
@@ -260,6 +387,22 @@ function formatDuration(seconds) {
   } else {
     return `${secs}s`;
   }
+}
+
+// Calculate compression stats
+function calculateCompressionStats(originalSize, compressedSize, bitrate) {
+  const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(2);
+  const savings = originalSize - compressedSize;
+  
+  return {
+    originalSize,
+    compressedSize,
+    compressionRatio: `${ratio}%`,
+    spaceSaved: savings,
+    spaceSavedMB: (savings / (1024 * 1024)).toFixed(2),
+    reduction: `${(compressedSize / originalSize * 100).toFixed(2)}%`,
+    bitrate
+  };
 }
 
 // Initialize on page load
